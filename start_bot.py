@@ -9,11 +9,12 @@ import uuid
 from datetime import datetime
 
 import openai
+from openai import OpenAI
 from instagrapi import Client
-from PIL import Image
 
 from instagram_util.feedback import get_post_metrics
 from instagram_util.convert_jpg import convert_to_jpg
+
 
 def load_config(account_dir):
     try:
@@ -23,6 +24,7 @@ def load_config(account_dir):
     except:
         raise ValueError(f'Could not find an account with the name {account_dir}. please create an account first with initialize_bot.py')
 
+
 def should_post(prompt, post_count=3):
     if re.search(r"\[POST [a-z0-9]{19}\]", prompt) is None:
         return True
@@ -31,6 +33,7 @@ def should_post(prompt, post_count=3):
     if 'yes' in response.strip().lower():
         return True
     return False
+
 
 def start_post(prompt, project_name):
     id = uuid.uuid4().hex
@@ -43,6 +46,7 @@ def start_post(prompt, project_name):
     prompt = prompt + f"\nCOMMENT_COUNT: "
     return prompt, caption, image_path
 
+
 def get_image(project_name):
     images = os.listdir(os.path.join("accounts", project_name, "queue"))
     if len(images) == 0:
@@ -54,6 +58,7 @@ def get_image(project_name):
     image_path = convert_to_jpg(os.path.join("accounts", project_name, "queue", image_fn))
     return image_path, image_description
 
+
 def get_caption(prompt, description):
     message = f"create the instagram post from the image description. \ndescription: {description}. Write the caption in the following format. Include nothing but the caption. \nie. CAPTION: [write caption here]"
     caption = run_gpt(prompt, message)
@@ -61,19 +66,28 @@ def get_caption(prompt, description):
     prompt = prompt + "\nCAPTION: {}".format(caption)
     return prompt, caption
 
+
 def get_timestamp(prompt):
     timestamp = datetime.now().strftime('%A, %B %d, %H:%M')
     return prompt + f"\nPOST TIMESTAMP: {timestamp}"
 
+
 def run_gpt(prompt, message):
-    response = openai.ChatCompletion.create(
+    config = load_config(account_dir)
+    client = OpenAI(
+        api_key=config['api_key']
+    )
+
+    response = client.chat.completions.create(
         model='gpt-3.5-turbo',
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": message}
         ]
     )
-    return response['choices'][0]['message']['content']
+    # return response['choices'][0]['message']['content']
+    return response.choices[0].message.content
+
 
 def post_to_instagram(post_content, image_path, client):
     with open(image_path, 'rb') as image_file:
@@ -119,7 +133,7 @@ def update_metrics(prompt):
 
 def main_job(project_name, post_count):
     prompt = open(f"accounts/{project_name}/prompt.txt", "r").read()
-    if should_post(prompt, post_count): # and there are images in the queue
+    if should_post(prompt, post_count):  # and there are images in the queue
         print(f"Posting - {project_name}")
         prompt = update_metrics(prompt)
         prompt, post_content, image_path = start_post(prompt, project_name)
